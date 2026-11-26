@@ -1,242 +1,222 @@
-# RAG 对比实验：纯 LLM vs 基础 RAG vs 优化 RAG
+# RAG Comparative Experiment: Vanilla LLM vs. Basic RAG vs. Optimized RAG
 
-> 操作手册（Word / PDF）：`docs/操作手册.docx`、`docs/操作手册.pdf`，覆盖环境、入库、前端启动、实验、人工打分（含练手模式）、导出与排错。
+&gt; Operation manual (Word / PDF): `docs/RAG-Vergleichsexperiment_Betriebshandbuch_DE.docx`, `docs/RAG-Vergleichsexperiment_Betriebshandbuch_DE.pdf` — covers environment setup, index building, frontend launch, experiments, human scoring (including a practice mode), export, and troubleshooting.
 
-在一个约 20 篇论文的小型垂直语料库上，用受控实验回答一个前置问题：**精细优化的 RAG 相对基础 RAG 到底带来多少增量，代价是什么，哪些技巧真正有效？**
+On a small vertical corpus of ~20 papers, a controlled experiment answers a prerequisite question: **how much incremental gain does finely optimized RAG deliver over basic RAG, at what cost, and which tricks actually work?**
 
-- 语料：20 篇暖通 / 建筑能源 / 室内空气论文（约 409 页，英/德混合）
-- 16 个实验臂，3 个正交维度 + 消融归因
-- 30 题冻结题库（22 可答 + 8 不可答），另有 5 题 × 英/德变体
-- 所有臂共用一条流水线，差异只走 `arms/configs/*.yaml`
-- 评测包含检索指标、LLM judge、配对 bootstrap、人工 kappa 校准与失败分类学
+- Corpus: 20 HVAC / building energy / indoor air quality papers (~409 pages, mixed English/German)
+- 16 experimental arms, 3 orthogonal dimensions + ablation attribution
+- Frozen question bank of 30 questions (22 answerable + 8 unanswerable), plus 5 questions × English/German variants
+- All arms share a single pipeline; differences live only in `arms/configs/*.yaml`
+- Evaluation includes retrieval metrics, LLM judge, paired bootstrap, human kappa calibration, and a failure taxonomy
 
-## 目录
+## Directory layout
 
-```text
-rag_lab/
-├── corpus/
-│   ├── raw/                 20 篇 PDF（只读）
-│   ├── text/                逐页纯文本（出题与引文校验用）
-│   ├── documents.json       文献元数据（标题/作者/语言/出版信息）
-│   ├── questions.jsonl      30 题冻结题库（含金标准证据）
-│   └── variants.jsonl       5 题 × 英/德等价版本
-├── core/                    解析、分块、存储、检索、LLM、引用
-├── ingest/                  三套索引：basic / structured / parent_child
-├── arms/
-│   ├── configs/             16 个臂的 YAML（唯一差异来源）
-│   ├── schema.py            配置校验
-│   ├── pipeline.py          共享流水线：检索→融合→重排→拼装→生成
-│   └── agent.py             ReAct 循环（仅 D 臂）
-├── prompts/templates.py     T1–T7 模板（冻结）
-├── eval/
-│   ├── runner.py            实验调度 → results/<run>/{raw,summary,by_type,paired}.csv
-│   ├── judge.py             T7 LLM 评判（带磁盘缓存）
-│   ├── metrics.py           Recall/MRR/nDCG、bootstrap、加权 kappa
-│   ├── case_loader.py       题库加载与证据→块 ID 解析
-│   ├── human.py             25 条人工抽查导出与一致性计算
-│   └── visualize.py         9 张图 + 单文件 dashboard.html
-├── demo/                    FastAPI + 单页前端（C 实时问答 + A/B/C 预制对比）
-├── tests/                   单元与集成测试
-└── results/                 运行输出
-```
+    rag_lab/
+    ├── corpus/
+    │   ├── raw/                 20 PDFs (read-only)
+    │   ├── text/                Per-page plain text (for question authoring and citation validation)
+    │   ├── documents.json       Bibliographic metadata (title/author/language/publication info)
+    │   ├── questions.jsonl      Frozen question bank of 30 questions (with gold-standard evidence)
+    │   └── variants.jsonl       5 questions × equivalent English/German versions
+    ├── core/                    Parsing, chunking, storage, retrieval, LLM, citations
+    ├── ingest/                  Three indexes: basic / structured / parent_child
+    ├── arms/
+    │   ├── configs/             YAML for the 16 arms (the only source of differences)
+    │   ├── schema.py            Config validation
+    │   ├── pipeline.py          Shared pipeline: retrieve → fuse → rerank → assemble → generate
+    │   └── agent.py             ReAct loop (arm D only)
+    ├── prompts/templates.py     Frozen templates T1–T7
+    ├── eval/
+    │   ├── runner.py            Experiment scheduler → results/&lt;run&gt;/{raw,summary,by_type,paired}.csv
+    │   ├── judge.py             T7 LLM judging (with on-disk cache)
+    │   ├── metrics.py           Recall/MRR/nDCG, bootstrap, weighted kappa
+    │   ├── case_loader.py       Question-bank loading and evidence→chunk-ID resolution
+    │   ├── human.py             Export of 25 human-audit samples and consistency computation
+    │   └── visualize.py         9 figures + single-file dashboard.html
+    ├── demo/                    FastAPI + single-page frontend (arm C live Q&A + A/B/C precomputed comparison)
+    ├── tests/                   Unit and integration tests
+    └── results/                 Run outputs
 
-## 环境
+## Environment
 
-已验证环境：`chain_1_fixed`（Python 3.12, torch CPU, chromadb 1.5.8）。
+Verified environment: `chain_1_fixed` (Python 3.12, torch CPU, chromadb 1.5.8).
 
-```bash
-conda activate chain_1_fixed
-pip install -r requirements.txt
-cp .env.example .env   # 填入 DEEPSEEK_API_KEY
-```
+    conda activate chain_1_fixed
+    pip install -r requirements.txt
+    cp .env.example .env   # fill in DEEPSEEK_API_KEY
 
-**GPU（推荐）**：默认 `DEVICE=auto`，检测到 CUDA 就把 bge-m3 与重排模型放到 GPU。RTX 4070 Laptop 8GB 实测两者同时驻留约 5 GB，20 候选重排约 0.7s（CPU 约 38s）。
+**GPU (recommended)**: by default `DEVICE=auto` — if CUDA is detected, bge-m3 and the reranker are placed on GPU. On an RTX 4070 Laptop 8GB, both models co-resident take ~5 GB; reranking 20 candidates takes ~0.7s (CPU: ~38s).
 
-```bash
-pip install "torch==2.11.0+cu128" --index-url https://download.pytorch.org/whl/cu128
-# 强制 CPU 时在 .env 设 DEVICE=cpu
-```
+    pip install "torch==2.11.0+cu128" --index-url https://download.pytorch.org/whl/cu128
+    # To force CPU, set DEVICE=cpu in .env
 
-默认模型与锁死项：
+Default models and locked settings:
 
-| 项 | 取值 |
+| Item | Value |
 | --- | --- |
-| 生成模型 | `deepseek-chat`，temperature 0.2（全臂一致） |
-| 嵌入 | `BAAI/bge-m3`（多语言，中/英/德跨语言检索） |
-| 重排 | `BAAI/bge-reranker-v2-m3`（三语必需的组件级改动） |
-| 融合 | RRF，BM25 : 向量 = 0.5 : 0.5，k=60 |
-| 主臂上下文 | top-6；D/D' 预算 18 块 |
-| 评判 | `deepseek-chat`，temperature 0 |
+| Generation model | `deepseek-chat`, temperature 0.2 (identical across all arms) |
+| Embedding | `BAAI/bge-m3` (multilingual; cross-lingual retrieval across Chinese/English/German) |
+| Reranker | `BAAI/bge-reranker-v2-m3` (a component-level change required by trilingual support) |
+| Fusion | RRF, BM25 : vector = 0.5 : 0.5, k=60 |
+| Main-arm context | top-6; D/D' budget: 18 chunks |
+| Judge | `deepseek-chat`, temperature 0 |
 
-`bge-m3` 与 `bge-reranker-v2-m3` 首次运行会从 HF 镜像下载（约 2 GB + 2.3 GB）。
+First run downloads `bge-m3` and `bge-reranker-v2-m3` from the HF mirror (~2 GB + 2.3 GB).
 
-## 建库
+## Building the indexes
 
-```bash
-python -m ingest.basic --reset          # 固定 1000/150 递归分块
-python -m ingest.structured --reset     # 结构感知分块（标题起块、表格原子）
-python -m ingest.parent_child --reset   # 1800 父块 + 250 子块
-# 或一次建三套：
-python scripts/build_all_indexes.py --reset
-```
+    python -m ingest.basic --reset          # fixed 1000/150 recursive chunking
+    python -m ingest.structured --reset     # structure-aware chunking (blocks start at headings, tables atomic)
+    python -m ingest.parent_child --reset   # 1800-char parents + 250-char children
+    # or build all three at once:
+    python scripts/build_all_indexes.py --reset
 
-入库报告写入 `storage/ingest_report_<strategy>.json`（文档数、块数、重复 ID）。块 ID 由内容 + 页 + 位置哈希生成，重复入库幂等；若出现重复 ID 会直接报错，而不是让 Chroma 静默丢数据。
+Ingest reports are written to `storage/ingest_report_&lt;strategy&gt;.json` (document count, chunk count, duplicate IDs). Chunk IDs are content + page + position hashes; re-ingestion is idempotent; duplicate IDs raise an error rather than letting Chroma silently drop data.
 
-**Windows 中文路径坑**：Chroma 1.5.x 在非 ASCII 路径且越过默认 `hnsw:sync_threshold=1000` 时可能静默丢失 HNSW 段。本项目所有 collection 以 `sync_threshold=10000`、`batch_size=1000` 创建。
+**Windows non-ASCII path pitfall**: Chroma 1.5.x on non-ASCII paths, once past the default `hnsw:sync_threshold=1000`, can silently lose HNSW segments. All collections in this project are created with `sync_threshold=10000`, `batch_size=1000`.
 
-## 运行实验
+## Running experiments
 
-```bash
-# 冒烟：1 可答 + 1 不可答 × A/B/C/D × 1 次
-python -m eval.runner --smoke
+    # Smoke test: 1 answerable + 1 unanswerable × A/B/C/D × 1 repeat
+    python -m eval.runner --smoke
 
-# 第一阶段：4 主臂 + D'
-python -m eval.runner --arms A "A'" B C "D'" --workers 8
+    # Phase 1: 4 main arms + D'
+    python -m eval.runner --arms A "A'" B C "D'" --workers 8
 
-# 全量 16 臂（30 题 × 3 次 = 1,440 行）
-python -m eval.runner --workers 8
+    # Full 16 arms (30 questions × 3 repeats = 1,440 rows)
+    python -m eval.runner --workers 8
 
-# 英/德变体（单独运行，按语言单独报告）
-python -m eval.runner --include-variants --workers 8
-```
+    # English/German variants (run separately, reported per language)
+    python -m eval.runner --include-variants --workers 8
 
-输出目录 `results/YYYYMMDD-HHMMSS/`：
+Output directory `results/YYYYMMDD-HHMMSS/`:
 
-| 文件 | 内容 |
+| File | Contents |
 | --- | --- |
-| `raw.jsonl` | 每行一条：答案、上下文、检索块 ID、候选池、token、延迟、judge 分数、`error_class` |
-| `summary.csv` | 每臂一行：完整性/相关性/忠实度/引用精度/拒答/延迟/成本/检索指标 |
-| `by_type.csv` | 臂 × 题型 |
-| `by_language.csv` | 臂 × 语言（中文主报告，英/德单独成组） |
-| `paired.csv` | 各臂 vs 基线的配对 bootstrap（均值差、95% CI、p 值） |
-| `errors.csv` | 错题与失败类别 |
-| `run_meta.json` | 模型、温度、题库哈希、全部臂配置（预注册证据） |
+| `raw.jsonl` | One row per case: answer, context, retrieved chunk IDs, candidate pool, tokens, latency, judge scores, `error_class` |
+| `summary.csv` | One row per arm: completeness/relevance/faithfulness/citation precision/refusal/latency/cost/retrieval metrics |
+| `by_type.csv` | Arm × question type |
+| `by_language.csv` | Arm × language (Chinese main report; English/German reported separately) |
+| `paired.csv` | Paired bootstrap of each arm vs. baseline (mean difference, 95% CI, p-value) |
+| `errors.csv` | Wrong answers and failure categories |
+| `run_meta.json` | Models, temperatures, question-bank hash, full arm configs (pre-registration evidence) |
 
-检索是确定性的：每个（检索配置，问题）只跑一次，3 次重复共用结果，但每条重复都计入实测检索延迟。差异配置（C / C-P1 / C-P2）共享同一次检索，避免在 CPU 上重复跑重排。
+Retrieval is deterministic: each (retrieval config, question) pair runs exactly once; the 3 repeats share the result, but every repeat still counts measured retrieval latency. Arms differing only in downstream config (C / C-P1 / C-P2) share the same retrieval pass, avoiding redundant reranking on CPU.
 
-### 失败分类（E1–E6）
+### Failure taxonomy (E1–E6)
 
-`E1` 金标块未被召回 → `E2` 召回了但被 top-k 截断 → `E3` 证据进了上下文但答案错/漏 → `E4` 引用不支持声明 → `E5` 拒答失误 → `E6` 工程错误。`errors.csv` 按此分布，下一轮只修占比最大的那一层。
+`E1` gold chunk not retrieved → `E2` retrieved but cut off by top-k → `E3` evidence in context but answer wrong/incomplete → `E4` citation does not support the claim → `E5` refusal error → `E6` engineering error. `errors.csv` is distributed across these; each iteration fixes only the largest layer.
 
-## 全量结果（16 臂，GPU）
+## Full results (16 arms, GPU)
 
-命令：`python -m eval.runner --repeats 3 --workers 8 --out-dir results/full_gpu`
-（30 题 × 3 次 × 16 臂 = 1,440 行；RTX 4070 Laptop 8GB，fp32，总耗时 11 分钟）
+Command: `python -m eval.runner --repeats 3 --workers 8 --out-dir results/full_gpu`
+(30 questions × 3 repeats × 16 arms = 1,440 rows; RTX 4070 Laptop 8GB, fp32, total ~11 minutes)
 
-### 主分析臂（维度一）
+### Main analysis arms (dimension 1)
 
-| 臂 | 完整性 [95% CI] | 相关性 | 忠实度 | 引用精度 | 正确拒答 | 错误拒答 | 延迟 p50 / p95 | 成本/题 | Recall@6 |
+| Arm | Completeness [95% CI] | Relevance | Faithfulness | Citation precision | Correct refusal | Wrong refusal | Latency p50 / p95 | Cost/question | Recall@6 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| A 纯 LLM | 0.288 [0.182, 0.386] | 0.682 | — | — | 0% | 1.5% | 1.8s / 5.6s | ¥0.0021 | — |
-| A' 结构化 LLM | 0.220 [0.114, 0.341] | 0.591 | — | — | 0% | 10.6% | 3.9s / 6.0s | ¥0.0044 | — |
-| B 基础 RAG | 0.765 [0.644, 0.871] | 0.955 | 0.944 | — | 100% | 4.5% | 1.4s / 3.6s | ¥0.0050 | 0.574 |
-| C 优化 RAG | 0.758 [0.629, 0.879] | 0.939 | 0.964 | 0.968 | 100% | 7.6% | 3.7s / 5.9s | ¥0.0105 | 0.700 |
-| D' 等上下文 top-18 | 0.894 [0.803, 0.962] | 1.000 | 0.966 | — | 100% | 0% | 1.5s / 5.9s | ¥0.0118 | 0.574 |
+| A Vanilla LLM | 0.288 [0.182, 0.386] | 0.682 | — | — | 0% | 1.5% | 1.8s / 5.6s | ¥0.0021 | — |
+| A' Structured LLM | 0.220 [0.114, 0.341] | 0.591 | — | — | 0% | 10.6% | 3.9s / 6.0s | ¥0.0044 | — |
+| B Basic RAG | 0.765 [0.644, 0.871] | 0.955 | 0.944 | — | 100% | 4.5% | 1.4s / 3.6s | ¥0.0050 | 0.574 |
+| C Optimized RAG | 0.758 [0.629, 0.879] | 0.939 | 0.964 | 0.968 | 100% | 7.6% | 3.7s / 5.9s | ¥0.0105 | 0.700 |
+| D' Equal context top-18 | 0.894 [0.803, 0.962] | 1.000 | 0.966 | — | 100% | 0% | 1.5s / 5.9s | ¥0.0118 | 0.574 |
 
-### 提示词臂（维度二）
+### Prompt arms (dimension 2)
 
-| 臂 | 完整性 [95% CI] | 错误拒答 | 延迟 p50 | 相对基线 |
+| Arm | Completeness [95% CI] | Wrong refusal | Latency p50 | vs. baseline |
 | --- | --- | --- | --- | --- |
-| B-P1（zero-shot CoT） | 0.780 [0.659, 0.886] | 6.1% | 2.3s | +0.015，p=0.571 |
-| B-P2（3-shot） | 0.735 [0.614, 0.849] | 4.5% | 1.3s | −0.030，p=0.312 |
-| C-P1（zero-shot CoT） | 0.765 [0.659, 0.871] | 9.1% | 4.3s | +0.008，p=0.908 |
-| C-P2（3-shot） | 0.720 [0.576, 0.856] | 18.2% | 3.5s | −0.038，p=0.415 |
+| B-P1 (zero-shot CoT) | 0.780 [0.659, 0.886] | 6.1% | 2.3s | +0.015, p=0.571 |
+| B-P2 (3-shot) | 0.735 [0.614, 0.849] | 4.5% | 1.3s | −0.030, p=0.312 |
+| C-P1 (zero-shot CoT) | 0.765 [0.659, 0.871] | 9.1% | 4.3s | +0.008, p=0.908 |
+| C-P2 (3-shot) | 0.720 [0.576, 0.856] | 18.2% | 3.5s | −0.038, p=0.415 |
 
-### 架构范式臂（维度三）
+### Architecture-paradigm arms (dimension 3)
 
-| 臂 | 完整性 [95% CI] | Recall@6 | 证据覆盖率 | 错误拒答 | 延迟 p50 |
+| Arm | Completeness [95% CI] | Recall@6 | Evidence coverage | Wrong refusal | Latency p50 |
 | --- | --- | --- | --- | --- | --- |
-| D ReAct（≤4 轮 / 18 块） | 0.712 [0.614, 0.811] | 0.478 | 0.534 | 0% | 3.7s |
-| D' 等上下文（一次性 18 块） | 0.894 [0.803, 0.962] | 0.574 | 0.740 | 0% | 1.5s |
+| D ReAct (≤4 rounds / 18 chunks) | 0.712 [0.614, 0.811] | 0.478 | 0.534 | 0% | 3.7s |
+| D' Equal context (one-shot 18 chunks) | 0.894 [0.803, 0.962] | 0.574 | 0.740 | 0% | 1.5s |
 
-D' → D：−0.182 [−0.265, −0.099]，p < 0.001。
+D' → D: −0.182 [−0.265, −0.099], p &lt; 0.001.
 
-### 消融臂（归因）
+### Ablation arms (attribution)
 
-| 臂 | 改动 | 完整性 [95% CI] | Recall@6 | 错误拒答 | 相对基线 |
+| Arm | Change | Completeness [95% CI] | Recall@6 | Wrong refusal | vs. baseline |
 | --- | --- | --- | --- | --- | --- |
-| C-1 | 结构感知分块 | 0.727 [0.606, 0.841] | 0.674 | 6.1% | −0.038，p=0.438 |
-| C-2 | + hybrid | 0.674 [0.515, 0.811] | 0.452 | 13.6% | −0.091，p=0.016 |
-| C-3 | + rerank | 0.758 [0.636, 0.871] | 0.574 | 4.5% | −0.008，p=0.748 |
-| C-4 | 五段式提示纪律 | 0.742 [0.614, 0.864] | 0.574 | 9.1% | −0.023，p=0.358 |
-| C-q | Step-back 3+3 | 0.841 [0.750, 0.932] | 0.722 | 3.0% | +0.083，p=0.020 |
-| C-c | 父子切割 | 0.599 [0.439, 0.750] | 0.595 | 21.2% | −0.159，p=0.004 |
+| C-1 | Structure-aware chunking | 0.727 [0.606, 0.841] | 0.674 | 6.1% | −0.038, p=0.438 |
+| C-2 | + hybrid | 0.674 [0.515, 0.811] | 0.452 | 13.6% | −0.091, p=0.016 |
+| C-3 | + rerank | 0.758 [0.636, 0.871] | 0.574 | 4.5% | −0.008, p=0.748 |
+| C-4 | Five-part prompt discipline | 0.742 [0.614, 0.864] | 0.574 | 9.1% | −0.023, p=0.358 |
+| C-q | Step-back 3+3 | 0.841 [0.750, 0.932] | 0.722 | 3.0% | +0.083, p=0.020 |
+| C-c | Parent–child chunking | 0.599 [0.439, 0.750] | 0.595 | 21.2% | −0.159, p=0.004 |
 
-### 结论
+### Conclusions
 
-1. **检索是主效应**：闭卷 A/A' 完整性 0.22–0.29，8 道不可答题全部硬答（正确拒答 0%）；接入检索后 0.76–0.89，正确拒答 100%。B→A 为 −0.477 [−0.614, −0.326]，B→A' 为 −0.545 [−0.689, −0.402]，p < 0.001。
-2. **完整优化栈没有转化为答案质量**：C 相对 B 为 −0.008 [−0.136, 0.121]，p=0.905；但检索层 Recall@6 0.574→0.700、nDCG@10 0.512→0.591，增益停在检索层。
-3. **消融只找到一个有效技巧**：Step-back 是唯一显著正收益（+0.083 [0.008, 0.197]，p=0.020），同时把错误拒答压到 3.0%。hybrid 单独使用显著变差（−0.091，p=0.016，中文提问下 BM25 词法腿无匹配，还挤占了融合名额）；父子切割显著变差（−0.159，p=0.004，3 个父块覆盖不足、错误拒答 21.2%）；结构分块、重排、提示词纪律均不显著。
-4. **Agentic 路线在该语料上更差**：D 相对 D' 为 −0.182 [−0.265, −0.099]，p < 0.001。多轮自主检索的累计召回（证据覆盖率 0.534）反而低于一次性 18 块（0.740）；优势不在“多轮决策”，而在“看得更多”。D' 是全实验完整性最高的臂（0.894）。
-5. **提示词技巧整体不显著**：CoT 与 3-shot 在 B/C 上都没有超过基线；C-P2 还把错误拒答推到 18.2%。
-6. **代价与部署含义**：GPU 上 C 的 p50 为 3.7s（B 1.4s），C-q 5.4s，全部臂都在 8s 内；单题成本 ¥0.005–0.012。若目标是单栋建筑/小型研究所语料库，**B + Step-back（或直接 D' 的 18 块一次性上下文）** 比完整优化栈更划算。
+1. **Retrieval is the main effect**: closed-book A/A' completeness is 0.22–0.29, and all 8 unanswerable questions are answered anyway (correct-refusal rate 0%); with retrieval attached, 0.76–0.89 with 100% correct refusals. B→A is −0.477 [−0.614, −0.326]; B→A' is −0.545 [−0.689, −0.402]; p &lt; 0.001.
+2. **The full optimization stack does not convert into answer quality**: C vs. B is −0.008 [−0.136, 0.121], p=0.905; but retrieval-level Recall@6 improves 0.574→0.700 and nDCG@10 0.512→0.591 — the gain stops at the retrieval layer.
+3. **Ablation finds exactly one trick that works**: Step-back is the only significant positive effect (+0.083 [0.008, 0.197], p=0.020), and simultaneously pushes wrong refusals down to 3.0%. Hybrid alone is significantly worse (−0.091, p=0.016: Chinese questions get no lexical matches on the BM25 leg, which still consumes fusion slots); parent–child chunking is significantly worse (−0.159, p=0.004: 3 parent chunks under-cover, wrong-refusal rate 21.2%); structure-aware chunking, reranking, and prompt discipline are all non-significant.
+4. **The agentic route is worse on this corpus**: D vs. D' is −0.182 [−0.265, −0.099], p &lt; 0.001. The cumulative recall of multi-round autonomous retrieval (evidence coverage 0.534) is actually lower than one-shot 18 chunks (0.740); the advantage lies not in "multi-round decision-making" but in "seeing more." D' is the highest-completeness arm of the entire experiment (0.894).
+5. **Prompting tricks are non-significant overall**: CoT and 3-shot do not beat the baseline on either B or C; C-P2 even pushes wrong refusals to 18.2%.
+6. **Cost and deployment implications**: on GPU, C's p50 is 3.7s (B: 1.4s), C-q 5.4s; all arms finish within 8s. Cost per question is ¥0.005–0.012. If the target is a single-building / small-institute corpus, **B + Step-back (or directly D' one-shot 18 chunks)** is more cost-effective than the full optimization stack.
 
-注意事项：judge 与被评模型同为 DeepSeek，完整性尚未经过 25 条人工抽查与 kappa 校准，结论应视为方向性证据；样本 30 题、单次运行；延迟为 RTX 4070 Laptop 8GB + fp32 的结果，不等同于服务器 GPU。`results/phase1/` 保留了早期 5 臂纯 CPU 运行的对照（C p50 27.5s），两者延迟不可直接比较。
+Caveats: the judge and the judged model are both DeepSeek; completeness has not yet undergone the 25-sample human audit and kappa calibration, so conclusions should be treated as directional evidence. Sample: 30 questions, single run. Latency measured on RTX 4070 Laptop 8GB + fp32 and does not generalize to server GPUs. `results/phase1/` retains an earlier pure-CPU run of 5 arms (C p50 27.5s) for reference; the two latency figures are not directly comparable.
 
-跨语言验证（`results/variants-smoke3/`）：英/德各一道多跳变体跑 C 臂，回答分别用英语/德语；但两题都只召回 Ni 等一篇论文，6 个上下文槽被单篇占满后拒答——与中文 q013 同一失败机制，限制在多跳上下文预算而非语言。
+Cross-lingual validation (`results/variants-smoke3/`): one multi-hop variant each in English and German ran arm C, answering in English and German respectively; but both questions retrieved only the single paper by Ni et al., and once all 6 context slots were filled by that one paper the system refused — the same failure mechanism as Chinese q013, a limitation of multi-hop context budget rather than language.
 
-图表与单文件看板：`results/full_gpu/fig1_ladder.png`、`dashboard.html`。
+Figures and single-file dashboard: `results/full_gpu/fig1_ladder.png`, `dashboard.html`.
 
-## 评测与可视化
+## Evaluation and visualization
 
-```bash
-python -m eval.visualize --run results/<run>
-```
+    python -m eval.visualize --run results/&lt;run&gt;
 
-生成 9 张图与 `dashboard.html`（单文件，内嵌图表、汇总表、三臂同题真实回答）。
+Generates 9 figures and `dashboard.html` (single file with embedded charts, summary tables, and real answers to the same questions from three arms).
 
-人工校准：
+Human calibration:
 
-```bash
-# 1) 导出 25 条盲评样本（参考答案/关键要点已填入）
-python -m eval.human export --run results/full_gpu --n 25
+    # 1) Export 25 blind-scoring samples (reference answers / key points pre-filled)
+    python -m eval.human export --run results/full_gpu --n 25
 
-# 2a) 网页打分（推荐，界面可切换中/英/德）
-python -m uvicorn eval.human_app:APP --port 8001
-# 打开 http://127.0.0.1:8001
-# 盲评：不显示臂名与 judge 分数；逐条自动保存；25 条打完才显示 kappa 与分臂结果
+    # 2a) Web scoring (recommended; UI switchable among Chinese/English/German)
+    python -m uvicorn eval.human_app:APP --port 8001
+    # open http://127.0.0.1:8001
+    # Blind scoring: arm names and judge scores hidden; saved per case; kappa and per-arm results shown only after all 25 are done
 
-# 2b) 或直接填 CSV
-# results/full_gpu/human_check.csv 的 human_completeness / human_relevance / human_refused
+    # 2b) Or fill in the CSV directly
+    # results/full_gpu/human_check.csv: human_completeness / human_relevance / human_refused
 
-# 3) 命令行复核（网页打分也会同步写回这份 CSV）
-python -m eval.human score --csv results/full_gpu/human_check.csv
-```
+    # 3) Command-line verification (web scoring also writes back to this CSV)
+    python -m eval.human score --csv results/full_gpu/human_check.csv
 
-输出完整性/相关性/拒答三组 exact agreement、±0.25 一致率、二次加权 kappa。`human_check_key.csv` 保存 row_id → 臂/题号的映射，打分时不要打开。
+Outputs exact agreement, ±0.25 agreement rate, and quadratic-weighted kappa for the completeness / relevance / refusal groups. `human_check_key.csv` holds the row_id → arm/question mapping; do not open it while scoring.
 
-**内容语言**：打分页右上角切换中/英/德时，题目、参考答案、关键要点与被评答案也会切换。英/德内容是预生成的机器翻译（`results/full_gpu/human_translations.json`），页面明确标注"评分以中文原文为准"，并可展开中文原文对照；翻译缺失的条目会回退中文并提示。生成/补译：
+**Content language**: the scoring page's top-right corner switches the interface among Chinese/English/German; questions, reference answers, key points, and the answers being judged switch accordingly. English/German content is pre-generated machine translation (`results/full_gpu/human_translations.json`); the page states explicitly "scoring is based on the Chinese original" and can expand the Chinese original for side-by-side comparison; entries missing a translation fall back to Chinese with a notice. To generate / backfill translations:
 
-```bash
-python scripts/translate_content.py --run results/full_gpu
-```
+    python scripts/translate_content.py --run results/full_gpu
 
-**相关性口径**：T7 judge 偶尔返回 0.5；按手册的 0/1 定义，报告与人工校准统一按 `≥0.5 → 1` 归一，原始值保留在 `raw.jsonl`。
+**Relevance convention**: the T7 judge occasionally returns 0.5; per the manual's 0/1 definition, reports and human calibration normalize `≥0.5 → 1`; raw values remain in `raw.jsonl`.
 
 ## Demo
 
-```bash
-python -m uvicorn demo.app:APP --port 8000
-# 或 python -m demo.app
-```
+    python -m uvicorn demo.app:APP --port 8000
+    # or python -m demo.app
 
-- 页面右上角可切换界面语言：中文 / English / Deutsch；标签、提示、示例问题与按钮同步切换。
-- 实时只开放 C 臂：结构分块 + hybrid + rerank + 引用/拒答；**回答语言跟随提问语言**，与界面语言相互独立。
-- 第二个标签页从最近一次 `raw.jsonl` 读取 A/B/C 预缓存回答，零延迟对比；固定包含一道不可答题。
-- 预制对比回答来自中文题库（zh）；切到英/德界面时会显示对应的机器翻译版本，并标注"机器翻译、原文为中文"；源文引用片段保持原语言。
+- Top-right corner switches the UI language: 中文 / English / Deutsch; labels, hints, sample questions, and buttons switch accordingly.
+- Live Q&A exposes only arm C: structure-aware chunking + hybrid + rerank + citations/refusals; **the answer language follows the question language**, independent of the UI language.
+- The second tab reads precomputed A/B/C answers from the most recent `raw.jsonl` for a zero-latency comparison; it always includes one unanswerable question.
+- Precomputed comparison answers come from the Chinese question bank (zh); switching the UI to English/German shows the corresponding machine-translated versions, labeled "machine translation; original in Chinese"; cited source snippets remain in their original language.
 
-## 测试
+## Tests
 
-```bash
-python -m pytest tests -q
-```
+    python -m pytest tests -q
 
-覆盖：16 臂配置与"只差一个变量"约束、题库题型配额、71 条金标准引文逐条对页校验、few-shot 与题库零重叠、块 ID 稳定性、父子映射、引用解析、bootstrap/kappa、拒答判定。
+Coverage: all 16 arm configs and the "differ by exactly one variable" constraint; question-type quotas in the bank; all 71 gold-standard citations validated page by page; zero overlap between few-shot examples and the question bank; chunk-ID stability; parent–child mapping; citation parsing; bootstrap/kappa; refusal detection.
 
-## 重要设计边界
+## Important design boundaries
 
-- **BM25 对中文提问基本失效**：语料为英/德文，中文查询在词法路上没有匹配，混合检索的增益在中国语料/中文提问下主要来自 rerank。这是预注册设计的已知限制；英/德变体单独报告，用于观察 hybrid 的真实作用。
-- **A/A' 不授权拒答**：它们的拒答是自发行为；C 系是"被授权的拒答"，解读拒答指标时按臂分组。
-- **C-c 的检索指标在父块层计算**：子块映射回父块后再对金标证据，同时报告上下文证据覆盖率；块大小不同，Recall 原始值不可与其他策略直接横比。
-- **judge 与被评模型同源**：DeepSeek 自评可能偏高，必须用 25 条人工抽查 + kappa 校准后才能把完整性写进结论。
-- **延迟只报中位数与 p95**：避免个别挂起请求污染均值。
+- **BM25 is essentially ineffective for Chinese questions**: the corpus is English/German, so Chinese queries have no matches on the lexical leg; hybrid-retrieval gains under a Chinese corpus / Chinese questions come mainly from reranking. This is a known limitation of the pre-registered design; English/German variants are reported separately to observe hybrid's true effect.
+- **A/A' are not authorized to refuse**: their refusals are spontaneous behaviors; arm C variants have "authorized refusal." Interpret refusal metrics grouped by arm.
+- **C-c retrieval metrics are computed at the parent-chunk level**: child chunks are mapped back to parents before matching gold evidence; context evidence coverage is also reported. Chunk sizes differ, so raw Recall values are not directly comparable across strategies.
+- **Judge and judged model share a source**: DeepSeek self-judging may inflate scores; the 25-sample human audit plus kappa calibration is mandatory before completeness can enter conclusions.
+- **Latency is reported as median and p95 only**: to avoid individual hung requests contaminating the mean.
