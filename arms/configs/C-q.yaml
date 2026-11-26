@@ -1,0 +1,10 @@
+id: C-q
+name: "C + Step-back 查询构造"
+dimension: ablation
+baseline: C
+answer: "原问题与后退问题各检索 top-3，去重补齐后总量恒为 6。"
+retrieval: {mode: hybrid, strategy: structure, k: 6, fetch_k: 20, hybrid: true, rerank: true, rerank_n: 20}
+query: {transform: stepback, stepback_k: 3}
+prompt: {template: T2, cot: false, fewshot: 0}
+output: {citations: true, refusal: true}
+agent: {enabled: false}

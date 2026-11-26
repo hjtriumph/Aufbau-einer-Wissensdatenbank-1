@@ -1,0 +1,10 @@
+id: D
+name: "ReAct 智能体"
+dimension: paradigm
+baseline: "D'"
+answer: "基础向量检索 + LLM 多轮自主检索，≤4 步、累计 ≤18 块。"
+retrieval: {mode: dense, strategy: fixed, k: 6, fetch_k: 20, hybrid: false, rerank: false}
+query: {transform: none}
+prompt: {template: T5, cot: false, fewshot: 0}
+output: {citations: true, refusal: true}
+agent: {enabled: true, max_steps: 4, max_chunks: 18, per_step_k: 6}

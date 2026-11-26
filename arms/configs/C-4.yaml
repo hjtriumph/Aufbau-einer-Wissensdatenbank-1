@@ -1,0 +1,10 @@
+id: C-4
+name: "B + 结构化提示纪律"
+dimension: ablation
+baseline: B
+answer: "检索同 B，仅换成五段式提示（引用义务 + 拒答条款）。"
+retrieval: {mode: dense, strategy: fixed, k: 6, fetch_k: 20}
+query: {transform: none}
+prompt: {template: T2, cot: false, fewshot: 0}
+output: {citations: true, refusal: true}
+agent: {enabled: false}

@@ -1,0 +1,10 @@
+id: C-P1
+name: "C + zero-shot CoT"
+dimension: prompt
+baseline: C
+answer: "检索同 C，结构化提示上追加显式逐步推理要求。"
+retrieval: {mode: hybrid, strategy: structure, k: 6, fetch_k: 20, hybrid: true, rerank: true, rerank_n: 20}
+query: {transform: none}
+prompt: {template: T2, cot: true, fewshot: 0}
+output: {citations: true, refusal: true}
+agent: {enabled: false}

@@ -1,0 +1,10 @@
+id: C
+name: "优化 RAG"
+dimension: main
+baseline: B
+answer: "结构感知分块 + hybrid(BM25+向量, RRF) + rerank + 结构化提示 + 引用 + 拒答。"
+retrieval: {mode: hybrid, strategy: structure, k: 6, fetch_k: 20, hybrid: true, rerank: true, rerank_n: 20}
+query: {transform: none}
+prompt: {template: T2, cot: false, fewshot: 0}
+output: {citations: true, refusal: true}
+agent: {enabled: false}

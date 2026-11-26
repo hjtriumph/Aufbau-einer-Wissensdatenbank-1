@@ -1,0 +1,10 @@
+id: "D'"
+name: "等上下文一次性对照"
+dimension: paradigm
+baseline: "D'"
+answer: "一次性向量检索 top-18 + 简单指令，与 D 的累计预算对齐。"
+retrieval: {mode: dense, strategy: fixed, k: 18, fetch_k: 20}
+query: {transform: none}
+prompt: {template: T1, cot: false, fewshot: 0}
+output: {citations: false, refusal: false}
+agent: {enabled: false}

@@ -1,0 +1,10 @@
+id: B-P2
+name: "B + 3-shot 推理示例"
+dimension: prompt
+baseline: B
+answer: "检索同 B，系统提示后插入 3 个带推理过程的示例（与题库零重叠）。"
+retrieval: {mode: dense, strategy: fixed, k: 6, fetch_k: 20}
+query: {transform: none}
+prompt: {template: T1, cot: false, fewshot: 3}
+output: {citations: false, refusal: false}
+agent: {enabled: false}

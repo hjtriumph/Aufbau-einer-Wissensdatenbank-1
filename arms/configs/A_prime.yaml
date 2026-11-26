@@ -1,0 +1,10 @@
+id: "A'"
+name: "结构化 LLM（闭卷格式对照）"
+dimension: main
+baseline: B
+answer: "同 A，仅换成五段式结构化提示（无上下文、无引用条款），隔离格式效应。"
+retrieval: {mode: none, strategy: fixed, k: 0, fetch_k: 0}
+query: {transform: none}
+prompt: {template: T2, cot: false, fewshot: 0}
+output: {citations: false, refusal: false}
+agent: {enabled: false}

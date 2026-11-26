@@ -1,0 +1,10 @@
+id: C-1
+name: "B + 结构感知分块"
+dimension: ablation
+baseline: B
+answer: "仅把分块从固定 1000/150 换成结构感知，其余同 B。"
+retrieval: {mode: dense, strategy: structure, k: 6, fetch_k: 20}
+query: {transform: none}
+prompt: {template: T1, cot: false, fewshot: 0}
+output: {citations: false, refusal: false}
+agent: {enabled: false}

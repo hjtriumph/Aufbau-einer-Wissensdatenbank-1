@@ -1,0 +1,10 @@
+id: C-2
+name: "B + hybrid 检索"
+dimension: ablation
+baseline: B
+answer: "仅把单路向量换成 BM25+向量 RRF 融合，不做 rerank。"
+retrieval: {mode: hybrid, strategy: fixed, k: 6, fetch_k: 20, hybrid: true, rerank: false}
+query: {transform: none}
+prompt: {template: T1, cot: false, fewshot: 0}
+output: {citations: false, refusal: false}
+agent: {enabled: false}

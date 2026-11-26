@@ -1,0 +1,10 @@
+id: A
+name: "纯 LLM（闭卷）"
+dimension: main
+baseline: B
+answer: "无检索、无上下文，简单问答指令；测闭卷幻觉与自发拒答。"
+retrieval: {mode: none, strategy: fixed, k: 0, fetch_k: 0}
+query: {transform: none}
+prompt: {template: T1, cot: false, fewshot: 0}
+output: {citations: false, refusal: false}
+agent: {enabled: false}

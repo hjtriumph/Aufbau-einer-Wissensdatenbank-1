@@ -1,0 +1,10 @@
+id: C-P2
+name: "C + 3-shot 推理示例"
+dimension: prompt
+baseline: C
+answer: "检索同 C，插入 3 个带完整推理与引用格式的示例。"
+retrieval: {mode: hybrid, strategy: structure, k: 6, fetch_k: 20, hybrid: true, rerank: true, rerank_n: 20}
+query: {transform: none}
+prompt: {template: T2, cot: false, fewshot: 3}
+output: {citations: true, refusal: true}
+agent: {enabled: false}

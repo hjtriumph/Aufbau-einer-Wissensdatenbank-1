@@ -1,0 +1,10 @@
+id: B
+name: "基础 RAG"
+dimension: main
+baseline: B
+answer: "固定分块 + 单路向量 top-6 + 简单指令。"
+retrieval: {mode: dense, strategy: fixed, k: 6, fetch_k: 20, hybrid: false, rerank: false}
+query: {transform: none}
+prompt: {template: T1, cot: false, fewshot: 0}
+output: {citations: false, refusal: false}
+agent: {enabled: false}

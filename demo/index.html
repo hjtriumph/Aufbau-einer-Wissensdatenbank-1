@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HVAC Knowledge Base · Optimised RAG</title>
+<style>
+  :root{
+    --ink:#18222e; --muted:#68768a; --line:#e2e8ef; --bg:#f4f7fa; --panel:#fff;
+    --accent:#2e7d32; --accent-soft:#e8f3ea; --blue:#2f5d8a; --warn:#b26a00; --red:#b3261e;
+    --radius:14px; --shadow:0 6px 24px rgba(20,35,55,.06);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:"Microsoft YaHei","PingFang SC","Segoe UI",system-ui,sans-serif;font-size:14px;line-height:1.65}
+  header{background:linear-gradient(135deg,#10222f 0%,#1d3b4d 60%,#245041 100%);color:#fff;
+    padding:24px 32px 20px;display:flex;justify-content:space-between;align-items:flex-start;gap:18px;flex-wrap:wrap}
+  header h1{margin:0 0 6px;font-size:22px;letter-spacing:.4px;font-weight:600}
+  header p{margin:0;color:#b9c7d4;font-size:13px;max-width:820px}
+  .lang{display:flex;gap:6px;flex-wrap:wrap}
+  .lang button{border:1px solid rgba(255,255,255,.35);background:transparent;color:#dce7f1;
+    border-radius:999px;padding:5px 12px;font-size:12.5px;cursor:pointer}
+  .lang button.active{background:#fff;color:#12202f;border-color:#fff;font-weight:600}
+  .wrap{max-width:1180px;margin:0 auto;padding:22px 26px 64px}
+  .tabs{display:flex;gap:8px;margin:0 0 18px;flex-wrap:wrap}
+  .tab{border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 18px;cursor:pointer;
+    color:var(--muted);font-size:13.5px}
+  .tab.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .panel{display:none}
+  .panel.active{display:block}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px 22px;margin-bottom:16px}
+  .ask-row{display:flex;gap:10px}
+  textarea{flex:1;min-height:58px;max-height:180px;resize:vertical;border:1px solid var(--line);border-radius:10px;
+    padding:12px 14px;font-family:inherit;font-size:14px;outline:none;background:#fbfcfe}
+  textarea:focus{border-color:#9dc7a0;box-shadow:0 0 0 3px rgba(46,125,50,.12)}
+  button.primary{background:var(--accent);color:#fff;border:0;border-radius:10px;padding:0 22px;font-size:14px;cursor:pointer;font-weight:600}
+  button.primary:disabled{opacity:.55;cursor:wait}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .chip{border:1px solid var(--line);background:#fbfcfe;border-radius:999px;padding:5px 12px;font-size:12.5px;color:var(--blue);cursor:pointer}
+  .chip:hover{border-color:#b9d4bb;background:var(--accent-soft)}
+  .hint{color:var(--muted);font-size:12px;margin-top:10px}
+  .answer-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+  .badge{border-radius:6px;padding:2px 8px;font-size:12px;background:#eef2f6;color:#3c4a5a}
+  .badge.green{background:var(--accent-soft);color:var(--accent)}
+  .badge.warn{background:#fdf0de;color:var(--warn)}
+  .answer{white-space:pre-wrap;font-size:14.5px;line-height:1.8}
+  .cites{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;margin-top:14px}
+  .cite{border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;padding:10px 12px;background:#fcfdfb}
+  .cite .label{font-weight:700;color:var(--accent);font-size:12px}
+  .cite .title{font-size:12.5px;font-weight:600;margin:3px 0 4px}
+  .cite .snip{font-size:12px;color:var(--muted);max-height:88px;overflow:auto}
+  .case{margin-bottom:22px}
+  .case h3{font-size:15px;margin:0 0 10px}
+  .case .q{color:var(--muted);font-size:13px;margin-bottom:12px}
+  .cols{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .col{border:1px solid var(--line);border-radius:10px;padding:12px;background:#fcfdff}
+  .col h4{margin:0 0 8px;font-size:13px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .col pre{white-space:pre-wrap;font-family:inherit;font-size:12.5px;line-height:1.7;max-height:300px;overflow:auto;margin:0}
+  .col .stat{font-size:11px;color:var(--muted);font-weight:400}
+  .col.refused{background:#fff8f5;border-color:#f0d6cb}
+  .loading{color:var(--muted);font-size:13px}
+  .err{color:var(--red);font-size:13px}
+  footer{color:var(--muted);font-size:12px;text-align:center;padding:10px}
+  @media (max-width:860px){.cols{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1 data-i18n="title">暖通工程知识库 · 优化 RAG 演示</h1>
+    <p data-i18n="subtitle">20 篇暖通/建筑能源/室内空气论文 · 回答语言跟随提问 · 引用可溯源 · 不可答时明确拒答</p>
+  </div>
+  <div class="lang" id="lang">
+    <button data-lang="zh">中文</button>
+    <button data-lang="en">English</button>
+    <button data-lang="de">Deutsch</button>
+  </div>
+</header>
+<div class="wrap">
+  <div class="tabs">
+    <button class="tab active" data-tab="live" data-i18n="tabLive">实时问答（C 臂）</button>
+    <button class="tab" data-tab="compare" data-i18n="tabCompare">三臂对比（预制）</button>
+  </div>
+
+  <div class="panel active" id="live">
+    <div class="card">
+      <div class="ask-row">
+        <textarea id="question"></textarea>
+        <button class="primary" id="send" data-i18n="send">提问</button>
+      </div>
+      <div class="chips" id="chips"></div>
+      <div class="hint" data-i18n="askHint">实时链路：结构感知分块 → 向量 + BM25 → RRF → 跨编码器重排 → 五段式结构化生成。回答需带 [C#] 引用；证据不足会拒答。</div>
+    </div>
+    <div id="result"></div>
+  </div>
+
+  <div class="panel" id="compare">
+    <div class="card">
+      <div class="hint" id="compare-meta" data-i18n="compareMeta">从最近一次实验运行中读取预缓存的 A / B / C 真实回答；零延迟、零额外调用。</div>
+    </div>
+    <div id="compare-body" class="loading"></div>
+  </div>
+  <footer data-i18n="footer">Demo 只开放 C 臂实时问答；D（多轮）与 C-q（Step-back）延迟更高，仅用于离线实验。</footer>
+</div>
+
+<script>
+const I18N = {
+  zh: {
+    title: "暖通工程知识库 · 优化 RAG 演示",
+    subtitle: "20 篇暖通/建筑能源/室内空气论文 · 回答语言跟随提问 · 引用可溯源 · 不可答时明确拒答",
+    tabLive: "实时问答（C 臂）",
+    tabCompare: "三臂对比（预制）",
+    send: "提问",
+    sending: "检索中…",
+    placeholder: "用中文、英语或德语提问，例如：SHAP 值为什么不能完全代表建筑热流？",
+    askHint: "实时链路：结构感知分块 → 向量 + BM25 → RRF → 跨编码器重排 → 五段式结构化生成。回答需带 [C#] 引用；证据不足会拒答。",
+    loadingAsk: "正在检索并生成，C 臂通常需要数秒…",
+    requestFail: "请求失败：",
+    cArm: "C 臂 · 优化 RAG",
+    wall: "响应",
+    cached: "检索缓存命中",
+    tokens: "tokens",
+    refused: "拒答",
+    answered: "带引用作答",
+    compareMeta: "从最近一次实验运行中读取预缓存的 A / B / C 真实回答；零延迟、零额外调用。",
+    compareMetaRun: "运行 {run} · 预缓存回答 · 每题显示完整性得分与引用情况",
+    compareNote: "注：预制回答来自中文题库（zh）。",
+    compareNoteTranslated: "注：英/德回答为机器翻译，原始回答来自中文题库（zh）。",
+    originalZh: "原文（中文）",
+    compareLoading: "加载中…",
+    compareEmpty: "尚无实验结果。先运行 python -m eval.runner。",
+    compareFail: "加载失败：",
+    typeNumeric: "数值题",
+    typeSingle: "单跳题",
+    typeMulti: "多跳题",
+    typeMethod: "方法题",
+    typeUnanswerable: "不可答题",
+    armA: "纯 LLM",
+    armB: "基础 RAG",
+    armC: "优化 RAG",
+    compLabel: "完整性",
+    citeLabel: "引用",
+    footer: "Demo 只开放 C 臂实时问答；D（多轮）与 C-q（Step-back）延迟更高，仅用于离线实验。",
+    samples: [
+      "比较层流送风与混合通风在手术室污染物控制上的优缺点。",
+      "SHAP 值为什么不能完全代表建筑热流？",
+      "降低热泵供水温度对运行成本有什么影响？",
+      "How does occupancy data affect heating load forecasting?",
+      "Welche Rolle spielt die thermische Masse bei der Kühllastprognose?"
+    ]
+  },
+  en: {
+    title: "HVAC Knowledge Base · Optimised RAG",
+    subtitle: "20 HVAC / building-energy / indoor-air papers · answers follow the question language · traceable citations · explicit refusal",
+    tabLive: "Live Q&A (Arm C)",
+    tabCompare: "Three-arm comparison (cached)",
+    send: "Ask",
+    sending: "Retrieving…",
+    placeholder: "Ask in Chinese, English or German, e.g. Why can SHAP values not fully represent building heat flows?",
+    askHint: "Live chain: structure-aware chunks → dense + BM25 → RRF → cross-encoder rerank → five-section answer. Claims must carry [C#] citations; insufficient evidence triggers a refusal.",
+    loadingAsk: "Retrieving and generating; Arm C usually takes a few seconds…",
+    requestFail: "Request failed: ",
+    cArm: "Arm C · Optimised RAG",
+    wall: "Response",
+    cached: "retrieval cached",
+    tokens: "tokens",
+    refused: "Refused",
+    answered: "Answered with citations",
+    compareMeta: "Cached A / B / C answers from the latest run; zero latency, zero extra calls.",
+    compareMetaRun: "Run {run} · cached answers · completeness and citation status per row",
+    compareNote: "Note: cached answers come from the Chinese benchmark (zh).",
+    compareNoteTranslated: "Note: English/German answers are machine translations of the Chinese benchmark responses (zh).",
+    originalZh: "original (zh)",
+    compareLoading: "Loading…",
+    compareEmpty: "No results yet. Run python -m eval.runner first.",
+    compareFail: "Load failed: ",
+    typeNumeric: "Numeric",
+    typeSingle: "Single-hop",
+    typeMulti: "Multi-hop",
+    typeMethod: "Method",
+    typeUnanswerable: "Unanswerable",
+    armA: "LLM only",
+    armB: "Basic RAG",
+    armC: "Optimised RAG",
+    compLabel: "Completeness",
+    citeLabel: "Citations",
+    footer: "Only Arm C is live; D (multi-turn) and C-q (step-back) are slower and reserved for offline experiments.",
+    samples: [
+      "Compare laminar air flow and turbulent mixing ventilation for contaminant control in operating rooms.",
+      "Why can SHAP values not fully represent building heat flows?",
+      "How does lowering the heat pump supply temperature affect operating cost?",
+      "How does occupancy data affect heating load forecasting?",
+      "Welche Rolle spielt die thermische Masse bei der Kühllastprognose?"
+    ]
+  },
+  de: {
+    title: "HVAC-Wissensbasis · Optimierte RAG",
+    subtitle: "20 Arbeiten zu HVAC / Gebäudeenergie / Innenraumluft · Antwortsprache folgt der Frage · nachvollziehbare Zitate · explizite Verweigerung",
+    tabLive: "Live-Q&A (Arm C)",
+    tabCompare: "Drei-Arm-Vergleich (zwischengespeichert)",
+    send: "Fragen",
+    sending: "Suche…",
+    placeholder: "Fragen Sie auf Deutsch, Englisch oder Chinesisch, z. B.: Warum können SHAP-Werte die Wärmeströme im Gebäude nicht vollständig abbilden?",
+    askHint: "Live-Kette: strukturbewusste Chunks → dicht + BM25 → RRF → Cross-Encoder-Reranking → fünfabschnittige Antwort. Aussagen benötigen [C#]-Zitate; bei unzureichender Evidenz wird verweigert.",
+    loadingAsk: "Suche und Generierung laufen; Arm C braucht meist einige Sekunden…",
+    requestFail: "Anfrage fehlgeschlagen: ",
+    cArm: "Arm C · Optimierte RAG",
+    wall: "Antwort",
+    cached: "Retrieval zwischengespeichert",
+    tokens: "Tokens",
+    refused: "Verweigert",
+    answered: "Mit Zitaten beantwortet",
+    compareMeta: "Zwischengespeicherte A-/B-/C-Antworten aus dem letzten Lauf; keine Latenz, keine zusätzlichen Aufrufe.",
+    compareMetaRun: "Lauf {run} · zwischengespeicherte Antworten · Vollständigkeit und Zitate je Zeile",
+    compareNote: "Hinweis: Die zwischengespeicherten Antworten stammen aus dem chinesischen Benchmark (zh).",
+    compareNoteTranslated: "Hinweis: Englische/deutsche Antworten sind Maschinenübersetzungen der chinesischen Benchmark-Antworten (zh).",
+    originalZh: "Original (zh)",
+    compareLoading: "Lädt…",
+    compareEmpty: "Noch keine Ergebnisse. Zuerst python -m eval.runner ausführen.",
+    compareFail: "Laden fehlgeschlagen: ",
+    typeNumeric: "Numerisch",
+    typeSingle: "Single-Hop",
+    typeMulti: "Multi-Hop",
+    typeMethod: "Methode",
+    typeUnanswerable: "Unbeantwortbar",
+    armA: "Nur LLM",
+    armB: "Basis-RAG",
+    armC: "Optimierte RAG",
+    compLabel: "Vollständigkeit",
+    citeLabel: "Zitate",
+    footer: "Nur Arm C ist live; D (mehrstufig) und C-q (Step-back) sind langsamer und nur für Offline-Experimente.",
+    samples: [
+      "Vergleichen Sie Laminarströmung und turbulente Mischlüftung bei der Kontaminationskontrolle im Operationssaal.",
+      "Warum können SHAP-Werte die Wärmeströme im Gebäude nicht vollständig abbilden?",
+      "Wie wirkt sich eine niedrigere Vorlauftemperatur der Wärmepumpe auf die Betriebskosten aus?",
+      "How does occupancy data affect heating load forecasting?",
+      "Welche Rolle spielt die thermische Masse bei der Kühllastprognose?"
+    ]
+  }
+};
+
+const state = { lang: localStorage.getItem("demoLang") || "zh", busy: false, lastAnswer: null, compareData: null };
+function t(key, vars) {
+  let text = (I18N[state.lang] && I18N[state.lang][key]) || I18N.zh[key] || key;
+  if (vars) Object.keys(vars).forEach(k => { text = text.replace("{" + k + "}", vars[k]); });
+  return text;
+}
+function esc(s) { const d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; }
+function $(sel) { return document.querySelector(sel); }
+
+function applyStatic() {
+  document.title = t("title");
+  document.documentElement.lang = state.lang === "zh" ? "zh-CN" : state.lang;
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    if (el.id === "send" && state.busy) return;
+    el.textContent = t(el.dataset.i18n);
+  });
+  document.querySelectorAll("#lang button").forEach(b => b.classList.toggle("active", b.dataset.lang === state.lang));
+  $("#question").placeholder = t("placeholder");
+  renderSamples();
+  if (state.lastAnswer) renderAnswer(state.lastAnswer);
+}
+
+function renderSamples() {
+  const box = $("#chips");
+  box.innerHTML = "";
+  (I18N[state.lang].samples || I18N.zh.samples).forEach(q => {
+    const b = document.createElement("span");
+    b.className = "chip";
+    b.textContent = q;
+    b.onclick = () => { $("#question").value = q; ask(); };
+    box.appendChild(b);
+  });
+}
+
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
+    tab.classList.add("active");
+    document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+    $("#" + tab.dataset.tab).classList.add("active");
+    if (tab.dataset.tab === "compare") loadCompare();
+  };
+});
+
+async function ask() {
+  const q = $("#question").value.trim();
+  if (!q || state.busy) return;
+  state.busy = true;
+  const btn = $("#send");
+  btn.disabled = true;
+  btn.textContent = t("sending");
+  $("#result").innerHTML = '<div class="card loading">' + esc(t("loadingAsk")) + "</div>";
+  try {
+    const r = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: q }) });
+    if (!r.ok) throw new Error(await r.text());
+    const d = await r.json();
+    state.lastAnswer = d;
+    renderAnswer(d);
+  } catch (e) {
+    $("#result").innerHTML = '<div class="card err">' + esc(t("requestFail") + e.message) + "</div>";
+  } finally {
+    state.busy = false;
+    btn.disabled = false;
+    btn.textContent = t("send");
+  }
+}
+
+function renderAnswer(d) {
+  const cost = (d.usage && d.usage.cost_cny) || 0;
+  const tokens = (d.usage && d.usage.total_tokens) || 0;
+  const cites = (d.citations || []).map(c => `
+    <div class="cite">
+      <div class="label">[${esc(c.label)}]</div>
+      <div class="title">${esc(c.doc_title)} · p.${esc(c.page)}</div>
+      <div class="snip">${esc(c.snippet)}</div>
+    </div>`).join("");
+  $("#result").innerHTML = `
+    <div class="card">
+      <div class="answer-head">
+        <span class="badge green">${esc(t("cArm"))}</span>
+        <span class="badge">${esc(t("wall"))} ${d.wall_latency_sec.toFixed(2)} s</span>
+        ${d.retrieval_cached ? `<span class="badge">${esc(t("cached"))}</span>` : ""}
+        <span class="badge">${tokens} ${esc(t("tokens"))} · ¥${cost.toFixed(5)}</span>
+        ${d.refused ? `<span class="badge warn">${esc(t("refused"))}</span>` : `<span class="badge">${esc(t("answered"))}</span>`}
+      </div>
+      <div class="answer">${esc(d.answer)}</div>
+      <div class="cites">${cites}</div>
+    </div>`;
+}
+
+async function loadCompare() {
+  const body = $("#compare-body");
+  body.className = "loading";
+  body.textContent = t("compareLoading");
+  try {
+    const r = await fetch("/api/comparison?lang=" + encodeURIComponent(state.lang));
+    const d = await r.json();
+    state.compareData = d;
+    renderCompare();
+  } catch (e) {
+    body.className = "err";
+    body.textContent = t("compareFail") + e.message;
+  }
+}
+
+function typeName(type) {
+  return {
+    numeric: t("typeNumeric"), single_hop: t("typeSingle"), multi_hop: t("typeMulti"),
+    method: t("typeMethod"), unanswerable: t("typeUnanswerable")
+  }[type] || type;
+}
+function armName(arm) {
+  return { A: t("armA"), B: t("armB"), C: t("armC") }[arm] || arm;
+}
+
+function renderCompare() {
+  const d = state.compareData;
+  if (!d) return;
+  const body = $("#compare-body");
+  body.className = "";
+  if (!d.cases || !d.cases.length) {
+    body.innerHTML = '<div class="card">' + esc(t("compareEmpty")) + "</div>";
+    return;
+  }
+  $("#compare-meta").textContent = t("compareMetaRun", { run: d.run });
+  body.innerHTML = d.cases.map(c => {
+    const cols = ["A", "B", "C"].map(a => {
+      const x = c[a];
+      if (!x) return "";
+      const stats = [
+        x.completeness != null ? t("compLabel") + " " + x.completeness : "",
+        x.citation_precision != null ? t("citeLabel") + " " + x.citation_precision : ""
+      ].filter(Boolean).join(" · ");
+      return `<div class="col ${x.refused ? "refused" : ""}">
+        <h4><span>${esc(armName(a))}</span><span class="stat">${esc(stats)}</span></h4>
+        <pre>${esc(x.answer)}</pre>
+      </div>`;
+    }).join("");
+    return `<div class="card case">
+      <h3>${esc(typeName(c.type))} · ${esc(c.case_id)}
+        ${(state.lang !== "zh" && c.translated === false) ? `<span class="badge">${esc(t("originalZh"))}</span>` : ""}</h3>
+      <div class="q">${esc(c.question)}</div>
+      <div class="cols">${cols}</div>
+    </div>`;
+  }).join("") + `<div class="card"><div class="hint">${esc(d.translated ? t("compareNoteTranslated") : t("compareNote"))}</div></div>`;
+}
+
+document.querySelectorAll("#lang button").forEach(b => {
+  b.onclick = () => {
+    state.lang = b.dataset.lang;
+    localStorage.setItem("demoLang", state.lang);
+    applyStatic();
+    if (state.compareData) loadCompare();
+  };
+});
+$("#send").onclick = ask;
+$("#question").addEventListener("keydown", e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") ask();
+});
+
+applyStatic();
+</script>
+</body>
+</html>

@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Human calibration · RAG</title>
+<style>
+  :root{
+    --ink:#18222e; --muted:#68768a; --line:#e2e8ef; --bg:#f4f7fa; --panel:#fff;
+    --accent:#2e7d32; --accent-soft:#e8f3ea; --blue:#2f5d8a; --warn:#b26a00;
+    --red:#b3261e; --radius:12px; --shadow:0 6px 22px rgba(20,35,55,.06);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:"Microsoft YaHei","PingFang SC","Segoe UI",system-ui,sans-serif;font-size:14px;line-height:1.65}
+  header{background:linear-gradient(135deg,#10222f,#1d3b4d 60%,#245041);color:#fff;padding:20px 28px;
+    display:flex;justify-content:space-between;align-items:flex-start;gap:18px;flex-wrap:wrap}
+  header h1{margin:0 0 4px;font-size:20px;font-weight:600}
+  header p{margin:0;color:#b9c7d4;font-size:12.5px;max-width:760px}
+  .lang{display:flex;gap:6px;flex-wrap:wrap}
+  .lang button{border:1px solid rgba(255,255,255,.35);background:transparent;color:#dce7f1;
+    border-radius:999px;padding:5px 12px;font-size:12.5px;cursor:pointer}
+  .lang button.active{background:#fff;color:#12202f;border-color:#fff;font-weight:600}
+  .wrap{max-width:1180px;margin:0 auto;padding:18px 22px 56px}
+  .topbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+  .progress-outer{flex:1;min-width:180px;height:9px;background:#e5ebf2;border-radius:999px;overflow:hidden}
+  .progress-inner{height:100%;width:0;background:var(--accent);transition:width .2s}
+  .pill{border-radius:999px;padding:3px 10px;font-size:12px;background:#eef2f6;color:#3c4a5a}
+  .pill.green{background:var(--accent-soft);color:var(--accent)}
+  .pill.warn{background:#fdf0de;color:var(--warn)}
+  .notice{background:#fff;border:1px solid var(--line);border-radius:var(--radius);
+    padding:10px 14px;font-size:12.5px;color:var(--muted);margin-bottom:14px}
+  .layout{display:grid;grid-template-columns:110px 1fr;gap:14px}
+  aside{display:flex;flex-wrap:wrap;gap:6px;align-content:flex-start}
+  .dot{width:34px;height:32px;border-radius:8px;border:1px solid var(--line);background:#fff;
+    color:var(--muted);font-size:12px;cursor:pointer}
+  .dot.scored{background:var(--accent-soft);border-color:#b9d4bb;color:var(--accent);font-weight:600}
+  .dot.current{outline:2px solid var(--accent);outline-offset:1px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:20px 22px}
+  .card-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+  .card-head h2{font-size:15px;margin:0}
+  .section-label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin:16px 0 6px}
+  .q{font-size:15.5px;font-weight:600;line-height:1.7}
+  .ref{background:#fafcff;border:1px solid var(--line);border-radius:9px;padding:12px 14px;font-size:13.5px}
+  .ref summary{cursor:pointer;color:var(--blue);font-size:12.5px;font-weight:600}
+  .kp{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .kp span{background:#eef4fb;color:#2f5d8a;border-radius:999px;padding:2px 9px;font-size:12px}
+  .answer{white-space:pre-wrap;font-family:inherit;font-size:13.5px;line-height:1.75;
+    background:#fcfdfb;border:1px solid var(--line);border-radius:9px;padding:12px 14px;
+    max-height:44vh;overflow:auto;margin:0}
+  .score-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
+  .score-btn{border:1px solid var(--line);background:#fff;border-radius:9px;padding:8px 14px;
+    font-size:13px;cursor:pointer;min-width:120px;text-align:left}
+  .score-btn small{display:block;color:var(--muted);font-size:11px;margin-top:1px}
+  .score-btn:hover{border-color:#b9d4bb;background:#fbfdfb}
+  .score-btn.on{background:var(--accent-soft);border-color:#8fbb93;color:var(--accent);font-weight:600}
+  .score-btn.on small{color:#4d7a51}
+  textarea{width:100%;min-height:70px;border:1px solid var(--line);border-radius:9px;
+    padding:9px 11px;font-family:inherit;font-size:13px;resize:vertical;background:#fbfcfe}
+  .actions{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:18px;flex-wrap:wrap}
+  .actions .group{display:flex;gap:8px;flex-wrap:wrap}
+  button.primary{background:var(--accent);color:#fff;border:0;border-radius:9px;padding:9px 18px;
+    font-size:13.5px;font-weight:600;cursor:pointer}
+  button.primary:disabled{opacity:.45;cursor:not-allowed}
+  button.ghost{background:#fff;border:1px solid var(--line);border-radius:9px;padding:8px 14px;
+    font-size:13px;cursor:pointer;color:var(--ink)}
+  .status{font-size:12px;color:var(--muted)}
+  .status.ok{color:var(--accent)}
+  .status.err{color:var(--red)}
+  .hint{font-size:12px;color:var(--muted);margin-top:8px}
+  .results{margin-top:18px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;background:#fff}
+  th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:left}
+  th{background:#eef2f6;font-weight:600}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .note{font-size:12px;color:var(--muted);margin-top:6px}
+  .hidden{display:none}
+  @media (max-width:820px){.layout{grid-template-columns:1fr}.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1 data-i18n="title">人工评分 · RAG 校准</h1>
+    <p data-i18n="subtitle">25 条盲评。评分时看不到模型臂与 judge 分数，完成后才显示一致性结果。</p>
+  </div>
+  <div class="lang" id="lang">
+    <button data-lang="zh">中文</button>
+    <button data-lang="en">English</button>
+    <button data-lang="de">Deutsch</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="topbar">
+    <span class="pill" id="progressText">0 / 25</span>
+    <div class="progress-outer"><div class="progress-inner" id="bar"></div></div>
+    <span class="pill green" data-i18n="blindBadge">盲评</span>
+    <button class="primary" id="finishBtn" disabled data-i18n="finish">查看校准结果</button>
+  </div>
+  <div class="notice" id="notice"></div>
+  <details class="notice" id="rubricBox">
+    <summary data-i18n="rubricTitle" style="cursor:pointer;color:var(--blue);font-weight:600">评分标准</summary>
+    <div id="rubricText" style="white-space:pre-wrap;margin-top:8px"></div>
+  </details>
+
+  <div class="layout">
+    <aside id="sidebar"></aside>
+    <main>
+      <div class="card" id="card"></div>
+      <section class="card results hidden" id="results"></section>
+    </main>
+  </div>
+</div>
+
+<script>
+const I18N = {
+  zh: {
+    title: "人工评分 · RAG 校准",
+    subtitle: "25 条盲评。评分时看不到模型臂与 judge 分数，完成后才显示一致性结果。",
+    blindBadge: "盲评",
+    finish: "查看校准结果",
+    notice: "评分时看不到模型臂与 judge 分数；全部完成后才显示一致性与 kappa。条目内容为中文（题库主体语言），界面语言不影响评分内容。",
+    itemNotice: "条目内容为中文（题库主体语言）。",
+    question: "问题",
+    reference: "参考答案与关键要点",
+    keyPoints: "关键要点",
+    answer: "被评答案",
+    completeness: "完整性",
+    relevance: "相关性",
+    refusal: "是否拒答",
+    notes: "备注（可选）",
+    notesPh: "例如：数字正确但漏了适用条件；或引用编号有误",
+    c0: "0 · 未覆盖/错误", c05: "0.5 · 部分覆盖", c1: "1 · 完整覆盖",
+    r0: "0 · 答非所问", r1: "1 · 切题",
+    f0: "0 · 有实质回答", f1: "1 · 拒答/无实质答案",
+    prev: "上一条", next: "下一条", clear: "清除本条",
+    saved: "已自动保存", saving: "保存中…", saveError: "保存失败",
+    progress: "第 {i} / {n} 条", done: "已完成 {d}/{n}",
+    notAll: "全部打分后才能看结果",
+    resultsTitle: "校准结果",
+    exact: "完全一致", within: "±0.25 一致", kappa: "加权 kappa", n: "样本数",
+    byArm: "按臂（每组 n 很小，仅作描述）", byType: "按题型",
+    group: "分组", humanMean: "人工均值", judgeMean: "judge 均值", diff: "差值",
+    metricCompleteness: "完整性", metricRelevance: "相关性", metricRefusal: "拒答",
+    scored: "已评分", unscored: "未评分",
+    hint: "快捷键：1 / 2 / 3 分别选择完整性 1 / 0.5 / 0；← → 切换条目；Ctrl+Enter 保存备注。",
+    contentLang: "英/德内容为机器翻译，评分以中文原文为准。可展开原文对照。",
+    translationNotice: "以下为机器翻译，便于阅读；评分以中文原文为准。",
+    original: "查看中文原文",
+    translationMissing: "该条暂无可靠翻译，显示中文原文。",
+    exportCsv: "下载评分 CSV",
+    noResult: "还没有足够的评分。",
+    kappaNote: "kappa 参考：≥0.8 几乎完全一致；0.6–0.8 高度一致；0.4–0.6 中等；<0.4 一致性差。n=25 时置信区间较宽。",
+    rubricTitle: "评分标准（点开）",
+    rubric: "完整性：1 = 参考答案的要点全部覆盖且数字正确；0.5 = 覆盖约一半，或有实质遗漏/小错；0 = 基本没答到、答错或空答。\n相关性：1 = 正面回答了这个具体问题；0 = 答非所问。\n拒答：1 = 整条回答是拒答、没有实质答案；0 = 有实质结论。五段式答案在【不确定项】里说缺失但有结论，算 0。"
+  },
+  en: {
+    title: "Human scoring · RAG calibration",
+    subtitle: "25 blind rows. Arm names and judge scores stay hidden until scoring is complete.",
+    blindBadge: "Blind",
+    finish: "View calibration",
+    notice: "Arm names and judge scores are hidden while scoring; agreement and kappa appear only after all rows are scored. Item content is Chinese (the benchmark language); the UI language does not change the content.",
+    itemNotice: "Item content is Chinese (benchmark language).",
+    question: "Question",
+    reference: "Reference answer and key points",
+    keyPoints: "Key points",
+    answer: "Answer under review",
+    completeness: "Completeness",
+    relevance: "Relevance",
+    refusal: "Refusal",
+    notes: "Notes (optional)",
+    notesPh: "e.g. numbers correct but a scope condition is missing; or a citation label is wrong",
+    c0: "0 · missing / wrong", c05: "0.5 · partial", c1: "1 · complete",
+    r0: "0 · off-topic", r1: "1 · on-topic",
+    f0: "0 · substantive answer", f1: "1 · refusal / no substance",
+    prev: "Previous", next: "Next", clear: "Clear this row",
+    saved: "Saved", saving: "Saving…", saveError: "Save failed",
+    progress: "Row {i} / {n}", done: "{d}/{n} scored",
+    notAll: "Score every row to view results",
+    resultsTitle: "Calibration results",
+    exact: "Exact agreement", within: "Within ±0.25", kappa: "Weighted kappa", n: "n",
+    byArm: "By arm (tiny n per group; descriptive only)", byType: "By question type",
+    group: "Group", humanMean: "Human mean", judgeMean: "Judge mean", diff: "Diff",
+    metricCompleteness: "Completeness", metricRelevance: "Relevance", metricRefusal: "Refusal",
+    scored: "Scored", unscored: "Unscored",
+    hint: "Shortcuts: 1 / 2 / 3 select completeness, 0 selects 0; ← → navigate; Ctrl+Enter saves notes.",
+    contentLang: "English/German content is machine-translated; the Chinese original is authoritative for scoring.",
+    translationNotice: "Machine translation for reading. Score the Chinese original; expand it below for reference.",
+    original: "Show the Chinese original",
+    translationMissing: "No reliable translation yet; showing the Chinese original.",
+    exportCsv: "Download scoring CSV",
+    noResult: "Not enough scores yet.",
+    kappaNote: "Kappa guide: ≥0.8 almost perfect; 0.6–0.8 substantial; 0.4–0.6 moderate; <0.4 poor. With n=25 the interval is wide.",
+    rubricTitle: "Scoring rubric (open)",
+    rubric: "Completeness: 1 = all reference key points covered and numbers correct; 0.5 = about half covered, or a material omission/minor error; 0 = mostly missing, wrong, or empty.\nRelevance: 1 = directly answers this question; 0 = off-topic.\nRefusal: 1 = the whole answer is a refusal with no substantive answer; 0 = it gives a substantive conclusion. A five-section answer that mentions missing data under 'uncertainties' but still concludes is 0."
+  },
+  de: {
+    title: "Menschliche Bewertung · RAG-Kalibrierung",
+    subtitle: "25 verblindete Zeilen. Armnamen und Judge-Werte bleiben bis zum Abschluss verborgen.",
+    blindBadge: "Verblindet",
+    finish: "Kalibrierung ansehen",
+    notice: "Armnamen und Judge-Werte sind während der Bewertung verborgen; Übereinstimmung und Kappa erscheinen erst nach Abschluss aller Zeilen. Der Inhalt ist Chinesisch (Benchmarksprache); die Oberflächensprache ändert den Inhalt nicht.",
+    itemNotice: "Der Inhalt ist Chinesisch (Benchmarksprache).",
+    question: "Frage",
+    reference: "Referenzantwort und Kernpunkte",
+    keyPoints: "Kernpunkte",
+    answer: "Zu bewertende Antwort",
+    completeness: "Vollständigkeit",
+    relevance: "Relevanz",
+    refusal: "Verweigerung",
+    notes: "Notizen (optional)",
+    notesPh: "z. B. Zahlen korrekt, aber eine Gültigkeitsbedingung fehlt; oder ein Zitatlabel ist falsch",
+    c0: "0 · fehlt / falsch", c05: "0.5 · teilweise", c1: "1 · vollständig",
+    r0: "0 · am Thema vorbei", r1: "1 · themenbezogen",
+    f0: "0 · inhaltliche Antwort", f1: "1 · Verweigerung / ohne Substanz",
+    prev: "Zurück", next: "Weiter", clear: "Zeile zurücksetzen",
+    saved: "Gespeichert", saving: "Speichern…", saveError: "Speichern fehlgeschlagen",
+    progress: "Zeile {i} / {n}", done: "{d}/{n} bewertet",
+    notAll: "Erst alle Zeilen bewerten",
+    resultsTitle: "Kalibrierungsergebnisse",
+    exact: "Exakte Übereinstimmung", within: "Innerhalb ±0.25", kappa: "Gewichtetes Kappa", n: "n",
+    byArm: "Nach Arm (sehr kleine n; nur deskriptiv)", byType: "Nach Fragetyp",
+    group: "Gruppe", humanMean: "Mensch-Mittel", judgeMean: "Judge-Mittel", diff: "Differenz",
+    metricCompleteness: "Vollständigkeit", metricRelevance: "Relevanz", metricRefusal: "Verweigerung",
+    scored: "Bewertet", unscored: "Unbewertet",
+    hint: "Tasten: 1 / 2 / 3 für Vollständigkeit, 0 für 0; ← → navigieren; Strg+Enter speichert Notizen.",
+    contentLang: "Englische/deutsche Inhalte sind maschinell übersetzt; für die Bewertung gilt das chinesische Original.",
+    translationNotice: "Maschinenübersetzung zum Lesen. Bewerten Sie das chinesische Original; unten aufklappbar.",
+    original: "Chinesisches Original anzeigen",
+    translationMissing: "Noch keine zuverlässige Übersetzung; chinesisches Original wird angezeigt.",
+    exportCsv: "Bewertungs-CSV herunterladen",
+    noResult: "Noch nicht genug Bewertungen.",
+    kappaNote: "Kappa: ≥0,8 fast perfekt; 0,6–0,8 deutlich; 0,4–0,6 mäßig; <0,4 schlecht. Bei n=25 ist das Intervall breit.",
+    rubricTitle: "Bewertungsraster (öffnen)",
+    rubric: "Vollständigkeit: 1 = alle Kernpunkte der Referenz abgedeckt und Zahlen korrekt; 0,5 = etwa die Hälfte abgedeckt oder wesentliche Auslassung/kleiner Fehler; 0 = überwiegend fehlend, falsch oder leer.\nRelevanz: 1 = beantwortet genau diese Frage; 0 = am Thema vorbei.\nVerweigerung: 1 = die gesamte Antwort ist eine Verweigerung ohne inhaltliche Antwort; 0 = sie enthält eine inhaltliche Schlussfolgerung. Ein fünfabschnittiger Text, der unter 'Unsicherheiten' fehlende Daten nennt, aber schlussfolgert, zählt als 0."
+  }
+};
+
+const state = { lang: localStorage.getItem("humanLang") || "zh", items: [], idx: 0, progress: { done: 0, total: 0 }, result: null, run: "" };
+let saveTimer = null;
+
+function t(key, vars) {
+  let text = (I18N[state.lang] && I18N[state.lang][key]) || I18N.zh[key] || key;
+  if (vars) Object.keys(vars).forEach(k => { text = text.replace("{" + k + "}", vars[k]); });
+  return text;
+}
+function esc(s) { const d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; }
+function $(sel) { return document.querySelector(sel); }
+
+function applyStatic() {
+  document.title = t("title");
+  document.documentElement.lang = state.lang === "zh" ? "zh-CN" : state.lang;
+  document.querySelectorAll("[data-i18n]").forEach(el => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll("#lang button").forEach(b => b.classList.toggle("active", b.dataset.lang === state.lang));
+  $("#notice").innerHTML = esc(t("notice")) + "<br><span style='opacity:.8'>" + esc(t("contentLang")) + "</span>";
+  $("#rubricText").textContent = t("rubric");
+  $("#progressText").textContent = t("done", { d: state.progress.done, n: state.progress.total });
+  const pct = state.progress.total ? (100 * state.progress.done / state.progress.total) : 0;
+  $("#bar").style.width = pct.toFixed(1) + "%";
+  const finish = $("#finishBtn");
+  finish.disabled = state.progress.done < state.progress.total || state.progress.total === 0;
+  finish.title = finish.disabled ? t("notAll") : "";
+  renderSidebar();
+  renderCard();
+  if (state.result) renderResults();
+}
+
+function renderSidebar() {
+  const side = $("#sidebar");
+  side.innerHTML = "";
+  state.items.forEach((item, i) => {
+    const b = document.createElement("button");
+    b.className = "dot" + (item.scored ? " scored" : "") + (i === state.idx ? " current" : "");
+    b.textContent = i + 1;
+    b.title = (item.scored ? t("scored") : t("unscored")) + " · " + t("progress", { i: i + 1, n: state.items.length });
+    b.onclick = () => { state.idx = i; renderSidebar(); renderCard(); };
+    side.appendChild(b);
+  });
+}
+
+function scoreButton(kind, value, label, sub, selected, onPick) {
+  const b = document.createElement("button");
+  b.className = "score-btn" + (selected ? " on" : "");
+  b.innerHTML = "<span>" + esc(label) + "</span><small>" + esc(sub || "") + "</small>";
+  b.onclick = () => onPick(value);
+  return b;
+}
+
+function viewOf(item) {
+  if (state.lang !== "zh") {
+    const tr = item.i18n && item.i18n[state.lang];
+    if (tr && tr.question && tr.answer) {
+      return {
+        question: tr.question,
+        reference_answer: tr.reference_answer || "",
+        key_points: tr.key_points || "",
+        answer: tr.answer,
+        translated: true
+      };
+    }
+    return {
+      question: item.question,
+      reference_answer: item.reference_answer,
+      key_points: item.key_points,
+      answer: item.answer,
+      translated: false,
+      missing: true
+    };
+  }
+  return {
+    question: item.question,
+    reference_answer: item.reference_answer,
+    key_points: item.key_points,
+    answer: item.answer,
+    translated: false
+  };
+}
+
+function renderCard() {
+  const card = $("#card");
+  if (state.idx >= state.items.length) { card.innerHTML = "<p>" + esc(t("noResult")) + "</p>"; return; }
+  const item = state.items[state.idx];
+  const view = viewOf(item);
+  const val = (v) => (v === "" || v == null) ? null : Number(v);
+  const mtNotice = view.translated
+    ? `<div class="notice" style="margin:0 0 12px">${esc(t("translationNotice"))}</div>`
+    : (view.missing ? `<div class="notice" style="margin:0 0 12px">${esc(t("translationMissing"))}</div>` : "");
+  const original = view.translated ? `
+    <details class="ref" style="margin-top:12px">
+      <summary>${esc(t("original"))}</summary>
+      <div style="margin-top:8px"><b>${esc(t("question"))}:</b> ${esc(item.question)}</div>
+      <div style="margin-top:8px"><b>${esc(t("reference"))}:</b> ${esc(item.reference_answer)}</div>
+      <div style="margin-top:8px"><b>${esc(t("answer"))}:</b></div>
+      <pre class="answer" style="margin-top:4px">${esc(item.answer)}</pre>
+    </details>` : "";
+  card.innerHTML = `
+    <div class="card-head">
+      <h2>${esc(t("progress", { i: state.idx + 1, n: state.items.length }))}</h2>
+      <span class="pill ${item.scored ? "green" : ""}">${esc(item.scored ? t("scored") : t("unscored"))}</span>
+    </div>
+    ${mtNotice}
+    <div class="section-label">${esc(t("question"))}</div>
+    <div class="q">${esc(view.question)}</div>
+    <div class="section-label">${esc(t("reference"))}</div>
+    <details class="ref" open>
+      <summary>${esc(t("reference"))}</summary>
+      <div style="margin-top:8px">${esc(view.reference_answer)}</div>
+      <div class="kp">${(view.key_points || "").split(/[；;]\s*/).filter(Boolean).map(k => `<span>${esc(k)}</span>`).join("")}</div>
+    </details>
+    <div class="section-label">${esc(t("answer"))}</div>
+    <pre class="answer">${esc(view.answer)}</pre>
+    ${original}
+    <div class="section-label">${esc(t("completeness"))}</div>
+    <div class="score-row" id="completenessRow"></div>
+    <div class="section-label">${esc(t("relevance"))}</div>
+    <div class="score-row" id="relevanceRow"></div>
+    <div class="section-label">${esc(t("refusal"))}</div>
+    <div class="score-row" id="refusalRow"></div>
+    <div class="section-label">${esc(t("notes"))}</div>
+    <textarea id="notes" placeholder="${esc(t("notesPh"))}" maxlength="2000">${esc(item.notes || "")}</textarea>
+    <div class="hint">${esc(t("hint"))}</div>
+    <div class="actions">
+      <div class="group">
+        <button class="ghost" id="prev">← ${esc(t("prev"))}</button>
+        <button class="ghost" id="next">${esc(t("next"))} →</button>
+        <button class="ghost" id="clear">${esc(t("clear"))}</button>
+      </div>
+      <span class="status" id="saveStatus"></span>
+    </div>`;
+
+  const cRow = $("#completenessRow");
+  [[0, "c0"], [0.5, "c05"], [1, "c1"]].forEach(([v, key]) => {
+    cRow.appendChild(scoreButton("c", v, t(key), "", val(item.human_completeness) === v, () => pick({ completeness: v })));
+  });
+  const rRow = $("#relevanceRow");
+  [[0, "r0"], [1, "r1"]].forEach(([v, key]) => {
+    rRow.appendChild(scoreButton("r", v, t(key), "", val(item.human_relevance) === v, () => pick({ relevance: v })));
+  });
+  const fRow = $("#refusalRow");
+  [[0, "f0"], [1, "f1"]].forEach(([v, key]) => {
+    fRow.appendChild(scoreButton("f", v, t(key), "", val(item.human_refused) === v, () => pick({ refused: v })));
+  });
+
+  $("#prev").onclick = () => { if (state.idx > 0) { state.idx--; renderSidebar(); renderCard(); } };
+  $("#next").onclick = () => { if (state.idx < state.items.length - 1) { state.idx++; renderSidebar(); renderCard(); } };
+  $("#clear").onclick = () => pick({ completeness: null, relevance: null, refused: null, notes: "" });
+  $("#notes").oninput = (e) => { item.notes = e.target.value; queueSave(); };
+  $("#notes").onkeydown = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); saveNow(); } };
+  $("#saveStatus").textContent = "";
+}
+
+function pick(patch) {
+  const item = state.items[state.idx];
+  Object.assign(item, patch);
+  if (Object.prototype.hasOwnProperty.call(patch, "completeness")) {
+    item.scored = patch.completeness !== null && patch.completeness !== "";
+  }
+  renderSidebar();
+  renderCard();
+  queueSave();
+}
+
+function queueSave() {
+  $("#saveStatus").textContent = t("saving");
+  $("#saveStatus").className = "status";
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveNow, 450);
+}
+
+async function saveNow() {
+  const item = state.items[state.idx];
+  const status = $("#saveStatus");
+  const payload = {
+    row_id: item.row_id,
+    completeness: (item.human_completeness === "" || item.human_completeness === null) ? null : Number(item.human_completeness),
+    relevance: (item.human_relevance === "" || item.human_relevance === null) ? null : Number(item.human_relevance),
+    refused: (item.human_refused === "" || item.human_refused === null) ? null : Number(item.human_refused),
+    notes: item.notes || ""
+  };
+  try {
+    const r = await fetch("/api/human/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    if (!r.ok) throw new Error(await r.text());
+    const d = await r.json();
+    state.progress = d.progress;
+    if (status) { status.textContent = t("saved"); status.className = "status ok"; }
+    applyProgressOnly();
+  } catch (e) {
+    if (status) { status.textContent = t("saveError"); status.className = "status err"; }
+  }
+}
+
+function applyProgressOnly() {
+  $("#rubricText").textContent = t("rubric");
+  $("#progressText").textContent = t("done", { d: state.progress.done, n: state.progress.total });
+  $("#bar").style.width = (state.progress.total ? 100 * state.progress.done / state.progress.total : 0).toFixed(1) + "%";
+  const finish = $("#finishBtn");
+  finish.disabled = state.progress.done < state.progress.total || state.progress.total === 0;
+  finish.title = finish.disabled ? t("notAll") : "";
+  renderSidebar();
+}
+
+async function finish() {
+  if (state.progress.done < state.progress.total) return;
+  try {
+    const r = await fetch("/api/human/result");
+    if (!r.ok) throw new Error(await r.text());
+    state.result = await r.json();
+    renderResults();
+    $("#results").scrollIntoView({ behavior: "smooth" });
+  } catch (e) {
+    alert(t("noResult"));
+  }
+}
+
+function metricTable(metrics) {
+  const rows = [
+    [t("metricCompleteness"), metrics.completeness],
+    [t("metricRelevance"), metrics.relevance],
+    [t("metricRefusal"), metrics.refusal]
+  ];
+  return `<table><thead><tr><th>${esc(t("group"))}</th><th>${esc(t("n"))}</th>
+    <th>${esc(t("exact"))}</th><th>${esc(t("within"))}</th><th>${esc(t("kappa"))}</th></tr></thead><tbody>
+    ${rows.map(([label, m]) => `<tr><td>${esc(label)}</td><td>${m.n || 0}</td>
+      <td>${m.n ? m.exact_agreement : "—"}</td><td>${m.n ? m.within_025 : "—"}</td>
+      <td>${m.n ? m.weighted_kappa : "—"}</td></tr>`).join("")}
+    </tbody></table>`;
+}
+
+function groupTable(title, rows) {
+  if (!rows || !rows.length) return "";
+  return `<h3 style="font-size:13px;margin:16px 0 6px">${esc(title)}</h3>
+    <table><thead><tr><th>${esc(t("group"))}</th><th>${esc(t("n"))}</th>
+    <th>${esc(t("humanMean"))}</th><th>${esc(t("judgeMean"))}</th><th>${esc(t("diff"))}</th></tr></thead><tbody>
+    ${rows.map(r => `<tr><td>${esc(r.label)}</td><td>${r.n}</td><td>${r.human_mean}</td>
+      <td>${r.judge_mean}</td><td>${r.diff}</td></tr>`).join("")}
+    </tbody></table>`;
+}
+
+function renderResults() {
+  const box = $("#results");
+  box.classList.remove("hidden");
+  const d = state.result;
+  box.innerHTML = `<div class="card-head"><h2>${esc(t("resultsTitle"))}</h2>
+    <a class="ghost" style="text-decoration:none" href="/api/human/export">${esc(t("exportCsv"))}</a></div>
+    ${metricTable(d.metrics)}
+    <p class="note">${esc(t("kappaNote"))}</p>
+    <div class="grid2">
+      <div>${groupTable(t("byArm"), d.by_arm)}</div>
+      <div>${groupTable(t("byType"), d.by_type)}</div>
+    </div>`;
+}
+
+async function load() {
+  try {
+    const r = await fetch("/api/human/items");
+    if (!r.ok) throw new Error(await r.text());
+    const d = await r.json();
+    state.items = d.items;
+    state.progress = d.progress;
+    state.run = d.run;
+    const first = state.items.findIndex(x => !x.scored);
+    state.idx = first >= 0 ? first : 0;
+    applyStatic();
+  } catch (e) {
+    $("#card").innerHTML = "<p class='status err'>" + esc(String(e.message || e)) + "</p>";
+  }
+}
+
+document.querySelectorAll("#lang button").forEach(b => {
+  b.onclick = () => {
+    state.lang = b.dataset.lang;
+    localStorage.setItem("humanLang", state.lang);
+    applyStatic();
+  };
+});
+$("#finishBtn").onclick = finish;
+
+document.addEventListener("keydown", (e) => {
+  const tag = (e.target.tagName || "").toLowerCase();
+  if (tag === "textarea" || tag === "input") return;
+  if (e.key === "ArrowLeft") { e.preventDefault(); if (state.idx > 0) { state.idx--; renderSidebar(); renderCard(); } }
+  if (e.key === "ArrowRight") { e.preventDefault(); if (state.idx < state.items.length - 1) { state.idx++; renderSidebar(); renderCard(); } }
+  if (e.key === "1") { e.preventDefault(); pick({ completeness: 1 }); }
+  if (e.key === "2") { e.preventDefault(); pick({ completeness: 0.5 }); }
+  if (e.key === "3") { e.preventDefault(); pick({ completeness: 0 }); }
+});
+
+load();
+</script>
+</body>
+</html>

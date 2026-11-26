@@ -1,0 +1,10 @@
+id: B-P1
+name: "B + zero-shot CoT"
+dimension: prompt
+baseline: B
+answer: "检索同 B，提示词追加逐步推理指令（无引用/拒答条款）。"
+retrieval: {mode: dense, strategy: fixed, k: 6, fetch_k: 20}
+query: {transform: none}
+prompt: {template: T1, cot: true, fewshot: 0}
+output: {citations: false, refusal: false}
+agent: {enabled: false}

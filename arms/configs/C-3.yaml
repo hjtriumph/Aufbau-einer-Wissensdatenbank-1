@@ -1,0 +1,10 @@
+id: C-3
+name: "B + rerank"
+dimension: ablation
+baseline: B
+answer: "仅对向量候选加 cross-encoder 重排，不做混合检索。"
+retrieval: {mode: dense, strategy: fixed, k: 6, fetch_k: 20, hybrid: false, rerank: true, rerank_n: 20}
+query: {transform: none}
+prompt: {template: T1, cot: false, fewshot: 0}
+output: {citations: false, refusal: false}
+agent: {enabled: false}
