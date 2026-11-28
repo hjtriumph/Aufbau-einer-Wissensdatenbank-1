@@ -393,9 +393,19 @@ function renderCard() {
 
 function pick(patch) {
   const item = state.items[state.idx];
-  Object.assign(item, patch);
+  // The score buttons use short keys; the persisted fields are human_*.
   if (Object.prototype.hasOwnProperty.call(patch, "completeness")) {
+    item.human_completeness = patch.completeness;
     item.scored = patch.completeness !== null && patch.completeness !== "";
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "relevance")) {
+    item.human_relevance = patch.relevance;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "refused")) {
+    item.human_refused = patch.refused;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "notes")) {
+    item.notes = patch.notes;
   }
   renderSidebar();
   renderCard();

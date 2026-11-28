@@ -1,6 +1,6 @@
 # 预注册冻结清单
 
-冻结日期：2026-11-26
+冻结日期：2026-11-28
 
 本文件与 `frozen_manifest.json` 记录实验开始前冻结的题库、提示词、臂配置与评测代码哈希。
 此后任何修改都必须记录理由与影响范围，并重跑全量基准。
@@ -58,7 +58,7 @@
 | `eval/case_loader.py` | `0364ffd99bd1997a` | 5737 |
 | `eval/human.py` | `7f9ccae84b1c1698` | 6647 |
 | `eval/human_app.py` | `7a5bfb8bfa2a9930` | 9168 |
-| `eval/human.html` | `6e794cc434886ccd` | 28550 |
+| `eval/human.html` | `095476d81600b7a4` | 28971 |
 | `scripts/translate_content.py` | `190b7e28ac9446aa` | 7841 |
 | `demo/app.py` | `6e4f6d2338b029e6` | 7115 |
 | `demo/index.html` | `60563496608a3efa` | 19848 |

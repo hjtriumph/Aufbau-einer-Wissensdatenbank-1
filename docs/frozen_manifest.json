@@ -1,5 +1,5 @@
 {
-  "frozen_at": "2026-11-26",
+  "frozen_at": "2026-11-28",
   "files": {
     "corpus/questions.jsonl": {
       "sha256": "cd93e77d357452443c5d1ea909295cc96aa1262cc08dd62a8a4687db0f007b84",
@@ -142,8 +142,8 @@
       "bytes": 9168
     },
     "eval/human.html": {
-      "sha256": "6e794cc434886ccd77253681b107e32548cb9a498516ab197bf1330ed8663de6",
-      "bytes": 28550
+      "sha256": "095476d81600b7a4c1b074b0eb163cf3cf5581fb2a849dae95795291c826e809",
+      "bytes": 28971
     },
     "scripts/translate_content.py": {
       "sha256": "190b7e28ac9446aa01e847d5b580a42b905ae3d0165aaa570f52369918447787",
